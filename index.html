@@ -25,8 +25,10 @@
         <option value="normal" selected>Normal</option>
         <option value="hard">Schwer</option>
       </select>
-      <button id="undo" class="ctrl-btn" title="Rückgängig" disabled>↩︎ Undo</button>
-      <button id="sound" class="ctrl-btn" title="Ton an/aus">🔊</button>
+      <button id="undo" class="ctrl-btn icon" title="Rückgängig" disabled>↩︎</button>
+      <button id="hint" class="ctrl-btn icon" title="Hinweis">💡</button>
+      <button id="daily" class="ctrl-btn icon" title="Tageschallenge">📅</button>
+      <button id="sound" class="ctrl-btn icon" title="Ton an/aus">🔊</button>
     </div>
 
     <div id="combo" class="combo"></div>
@@ -35,12 +37,15 @@
       <canvas id="board"></canvas>
     </div>
 
+    <p class="hint-text">Tippen = drehen · Ziehen = platzieren</p>
+
     <div id="tray" class="tray"></div>
 
     <div id="gameover" class="overlay hidden">
       <div class="overlay-card">
         <h2>Game Over</h2>
         <p>Punkte: <span id="final-score">0</span></p>
+        <ol id="leaderboard" class="leaderboard"></ol>
         <button id="overlay-restart">Nochmal spielen</button>
       </div>
     </div>

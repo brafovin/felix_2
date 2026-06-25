@@ -1,4 +1,6 @@
-/* Block Blast Clone — Vanilla JS: Maus + Touch, Sound, Animationen, Undo, Schwierigkeit */
+/* Block Blast Clone — Vanilla JS
+   Maus + Touch, Sound, Animationen, Undo, Schwierigkeit,
+   Teile drehen, Hinweis, Tageschallenge, Bestenliste */
 (() => {
   "use strict";
 
@@ -8,7 +10,6 @@
     "#a76bff", "#3ad0e0", "#ff6b5c"
   ];
 
-  // Block-Formen mit relativen Koordinaten
   const SHAPES = [
     [[0, 0]],
     [[0, 0], [0, 1]],
@@ -44,7 +45,10 @@
   const comboEl = document.getElementById("combo");
   const overlay = document.getElementById("gameover");
   const finalScoreEl = document.getElementById("final-score");
+  const leaderboardEl = document.getElementById("leaderboard");
   const undoBtn = document.getElementById("undo");
+  const hintBtn = document.getElementById("hint");
+  const dailyBtn = document.getElementById("daily");
   const soundBtn = document.getElementById("sound");
   const diffSel = document.getElementById("difficulty");
 
@@ -54,15 +58,27 @@
   let score = 0;
   let best = Number(localStorage.getItem("bb_best") || 0);
   let cell = 0, gap = 0, dpr = 1;
-  let history = null;            // Schnappschuss für Undo (1 Schritt)
+  let history = null;
   let soundOn = localStorage.getItem("bb_sound") !== "off";
   let difficulty = localStorage.getItem("bb_diff") || "normal";
-  let scoreAnim = 0;            // animierter, hochzählender Punktestand
+  let scoreAnim = 0;
+  let dailyActive = false;
+  let gameEnded = false;
 
-  // Animations-Objekte
-  let particles = [];          // {x,y,vx,vy,life,max,color,size}
-  let clearing = [];           // {x,y,color,t} verblassende gelöschte Zellen
-  let floaters = [];           // {x,y,text,t,color}
+  // RNG: deterministisch im Tagesmodus, sonst Math.random
+  let rngState = null;
+  function rng() {
+    if (rngState === null) return Math.random();
+    rngState |= 0;
+    rngState = (rngState + 0x6D2B79F5) | 0;
+    let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  // Animationen
+  let particles = [], clearing = [], floaters = [];
+  let hint = null;            // {cells, life, phase}
 
   bestEl.textContent = best;
   diffSel.value = difficulty;
@@ -81,7 +97,6 @@
     cell = (size - gap * (GRID + 1)) / GRID;
   }
   const cellPos = (i) => gap + i * (cell + gap);
-  const cellCenter = (i) => cellPos(i) + cell / 2;
 
   // ---------- Board ----------
   function newBoard() {
@@ -122,7 +137,6 @@
     ctx.clearRect(0, 0, px, px);
     const radius = Math.max(4, cell * 0.18);
 
-    // leeres Raster + gesetzte Blöcke
     for (let r = 0; r < GRID; r++) {
       for (let c = 0; c < GRID; c++) {
         const x = cellPos(c), y = cellPos(r), v = board[r][c];
@@ -136,14 +150,12 @@
       }
     }
 
-    // verblassende gelöschte Zellen
     for (const cl of clearing) {
       ctx.globalAlpha = Math.max(0, 1 - cl.t);
       drawBlock(cl.x, cl.y, cl.color, 1 - cl.t * 0.7);
       ctx.globalAlpha = 1;
     }
 
-    // Partikel
     for (const p of particles) {
       ctx.globalAlpha = Math.max(0, p.life / p.max);
       ctx.fillStyle = p.color;
@@ -153,7 +165,19 @@
       ctx.globalAlpha = 1;
     }
 
-    // Drag-Vorschau
+    // Hinweis-Markierung (pulsierend)
+    if (hint) {
+      const a = 0.35 + 0.35 * Math.abs(Math.sin(hint.phase));
+      ctx.globalAlpha = a;
+      ctx.lineWidth = Math.max(2, cell * 0.08);
+      ctx.strokeStyle = "#ffd24a";
+      for (const [r, c] of hint.cells) {
+        roundRect(cellPos(c) + 2, cellPos(r) + 2, cell - 4, cell - 4, radius);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
     if (dragPreview) {
       const { color, valid, cells } = dragPreview;
       ctx.globalAlpha = valid ? 0.55 : 0.3;
@@ -166,7 +190,6 @@
       ctx.globalAlpha = 1;
     }
 
-    // schwebende Punkte-Texte
     for (const f of floaters) {
       ctx.globalAlpha = Math.max(0, 1 - f.t);
       ctx.fillStyle = f.color;
@@ -180,7 +203,7 @@
     ctx.restore();
   }
 
-  // ---------- Animationsschleife ----------
+  // ---------- Loop ----------
   let last = 0;
   function loop(ts) {
     const dt = last ? Math.min(50, ts - last) : 16;
@@ -189,7 +212,7 @@
     for (const p of particles) {
       p.x += p.vx * dt * 0.06;
       p.y += p.vy * dt * 0.06;
-      p.vy += dt * 0.02;     // Schwerkraft
+      p.vy += dt * 0.02;
       p.life -= dt;
     }
     particles = particles.filter(p => p.life > 0);
@@ -199,6 +222,12 @@
 
     for (const f of floaters) f.t += dt / 1000;
     floaters = floaters.filter(f => f.t < 1);
+
+    if (hint) {
+      hint.life -= dt;
+      hint.phase += dt * 0.008;
+      if (hint.life <= 0) hint = null;
+    }
 
     if (scoreAnim < score) {
       scoreAnim = Math.min(score, scoreAnim + Math.max(1, Math.ceil((score - scoreAnim) / 8)));
@@ -211,17 +240,15 @@
 
   // ---------- Pieces ----------
   function shapeWeight(size) {
-    // Schwierigkeit beeinflusst Wahrscheinlichkeit großer Teile
     if (difficulty === "easy") return size <= 2 ? 4 : size <= 4 ? 2 : 1;
     if (difficulty === "hard") return size >= 6 ? 4 : size >= 4 ? 2 : 1;
-    return 1; // normal: gleichverteilt
+    return 1;
   }
 
   function pickShape() {
-    const weighted = [];
-    for (const s of SHAPES) weighted.push({ s, w: shapeWeight(s.length) });
+    const weighted = SHAPES.map(s => ({ s, w: shapeWeight(s.length) }));
     let total = weighted.reduce((a, b) => a + b.w, 0);
-    let roll = Math.random() * total;
+    let roll = rng() * total;
     for (const item of weighted) {
       roll -= item.w;
       if (roll <= 0) return item.s;
@@ -229,17 +256,37 @@
     return SHAPES[0];
   }
 
-  function randPiece() {
-    const shape = pickShape();
-    const color = (Math.random() * COLORS.length) | 0;
+  function measure(shape) {
     let maxR = 0, maxC = 0;
     for (const [r, c] of shape) { maxR = Math.max(maxR, r); maxC = Math.max(maxC, c); }
-    return { shape, color, rows: maxR + 1, cols: maxC + 1, used: false };
+    return { rows: maxR + 1, cols: maxC + 1 };
+  }
+
+  function randPiece() {
+    const shape = pickShape();
+    const { rows, cols } = measure(shape);
+    return { shape, color: (rng() * COLORS.length) | 0, rows, cols, used: false };
   }
 
   function refillTray() {
     pieces = [randPiece(), randPiece(), randPiece()];
     renderTray();
+  }
+
+  function rotateShape(shape, rows) {
+    // 90° im Uhrzeigersinn, danach an (0,0) ausrichten
+    let rotated = shape.map(([r, c]) => [c, (rows - 1) - r]);
+    let minR = Infinity, minC = Infinity;
+    for (const [r, c] of rotated) { minR = Math.min(minR, r); minC = Math.min(minC, c); }
+    return rotated.map(([r, c]) => [r - minR, c - minC]);
+  }
+
+  function rotatePiece(piece) {
+    const shape = rotateShape(piece.shape, piece.rows);
+    const { rows, cols } = measure(shape);
+    piece.shape = shape; piece.rows = rows; piece.cols = cols;
+    renderTray();
+    sound("rotate");
   }
 
   function renderTray() {
@@ -284,7 +331,7 @@
   function snapshot() {
     history = {
       board: board.map(row => row.slice()),
-      pieces: pieces.map(p => ({ ...p, shape: p.shape })),
+      pieces: pieces.map(p => ({ ...p, shape: p.shape.map(x => x.slice()) })),
       score
     };
     undoBtn.disabled = false;
@@ -299,8 +346,9 @@
     scoreEl.textContent = score;
     history = null;
     undoBtn.disabled = true;
+    gameEnded = false;
     overlay.classList.add("hidden");
-    clearing = []; particles = []; floaters = [];
+    clearing = []; particles = []; floaters = []; hint = null;
     renderTray();
     sound("undo");
   }
@@ -329,7 +377,6 @@
     for (const r of fullRows) for (let c = 0; c < GRID; c++) cleared.add(r + "," + c);
     for (const c of fullCols) for (let r = 0; r < GRID; r++) cleared.add(r + "," + c);
 
-    // Animationen + Partikel pro gelöschter Zelle
     for (const key of cleared) {
       const [r, c] = key.split(",").map(Number);
       const color = COLORS[board[r][c]];
@@ -337,13 +384,13 @@
       clearing.push({ x, y, color, t: 0 });
       const cx = x + cell / 2, cy = y + cell / 2;
       for (let i = 0; i < 5; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const sp = 1 + Math.random() * 3;
+        const ang = rng() * Math.PI * 2;
+        const sp = 1 + rng() * 3;
         particles.push({
           x: cx, y: cy,
           vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 1,
-          life: 500 + Math.random() * 300, max: 800,
-          color, size: cell * (0.08 + Math.random() * 0.1)
+          life: 500 + rng() * 300, max: 800,
+          color, size: cell * (0.08 + rng() * 0.1)
         });
       }
       board[r][c] = null;
@@ -374,6 +421,28 @@
     }
   }
 
+  // ---------- Hinweis ----------
+  function findHint() {
+    for (const p of pieces) {
+      if (p.used) continue;
+      for (let r = 0; r < GRID; r++)
+        for (let c = 0; c < GRID; c++)
+          if (canPlace(p, r, c))
+            return { piece: p, baseR: r, baseC: c };
+    }
+    return null;
+  }
+
+  function showHint() {
+    const h = findHint();
+    if (!h) return;
+    hint = {
+      cells: h.piece.shape.map(([r, c]) => [h.baseR + r, h.baseC + c]),
+      life: 2500, phase: 0
+    };
+    sound("undo");
+  }
+
   // ---------- Game Over ----------
   function anyMoveLeft() {
     for (const p of pieces) {
@@ -391,12 +460,40 @@
   }
 
   function gameOver() {
+    if (gameEnded) return;
+    gameEnded = true;
     finalScoreEl.textContent = score;
+    const top = saveScore(score);
+    renderLeaderboard(top, score);
     overlay.classList.remove("hidden");
     sound("over");
   }
 
-  // ---------- Sound (Web Audio API) ----------
+  // ---------- Bestenliste ----------
+  function loadScores() {
+    try { return JSON.parse(localStorage.getItem("bb_scores") || "[]"); }
+    catch (e) { return []; }
+  }
+  function saveScore(s) {
+    const arr = loadScores();
+    arr.push(s);
+    arr.sort((a, b) => b - a);
+    arr.length = Math.min(5, arr.length);
+    localStorage.setItem("bb_scores", JSON.stringify(arr));
+    return arr;
+  }
+  function renderLeaderboard(arr, current) {
+    leaderboardEl.innerHTML = "";
+    let highlighted = false;
+    arr.forEach((s, i) => {
+      const li = document.createElement("li");
+      if (!highlighted && s === current) { li.className = "current"; highlighted = true; }
+      li.innerHTML = `<span class="rank">${i + 1}.</span><span>${s}</span>`;
+      leaderboardEl.appendChild(li);
+    });
+  }
+
+  // ---------- Sound ----------
   let actx = null;
   function ensureAudio() {
     if (!actx) {
@@ -424,6 +521,7 @@
     ensureAudio();
     if (!actx) return;
     if (kind === "place") tone(330, 0.12, "triangle", 0.12);
+    else if (kind === "rotate") tone(420, 0.08, "square", 0.08);
     else if (kind === "clear") { tone(523, 0.15, "triangle"); tone(784, 0.18, "triangle", 0.12, 0.06); }
     else if (kind === "combo") {
       const base = [523, 659, 784, 988, 1175];
@@ -432,14 +530,14 @@
     else if (kind === "undo") tone(220, 0.1, "sine", 0.1);
     else if (kind === "over") { tone(440, 0.25, "sawtooth", 0.12); tone(330, 0.3, "sawtooth", 0.12, 0.12); tone(220, 0.4, "sawtooth", 0.12, 0.26); }
   }
-
   function updateSoundBtn() {
     soundBtn.textContent = soundOn ? "🔊" : "🔇";
     soundBtn.classList.toggle("off", !soundOn);
   }
 
-  // ---------- Drag & Drop ----------
+  // ---------- Drag & Drop / Tap-to-Rotate ----------
   let drag = null;
+  const MOVE_THRESHOLD = 8;
 
   function attachDrag(el, index) {
     el.addEventListener("pointerdown", (e) => startDrag(e, el, index));
@@ -451,17 +549,11 @@
     e.preventDefault();
     ensureAudio();
     el.setPointerCapture(e.pointerId);
-    el.classList.add("dragging");
 
-    const ghost = el.cloneNode(true);
-    ghost.classList.remove("dragging");
-    Object.assign(ghost.style, {
-      position: "fixed", pointerEvents: "none", zIndex: "50", opacity: "0.9"
-    });
-    document.body.appendChild(ghost);
-
-    drag = { piece, index, el, ghost, pointerId: e.pointerId, target: null };
-    moveDrag(e);
+    drag = {
+      piece, index, el, ghost: null, pointerId: e.pointerId,
+      target: null, startX: e.clientX, startY: e.clientY, moved: false
+    };
     el.addEventListener("pointermove", moveDrag);
     el.addEventListener("pointerup", endDrag);
     el.addEventListener("pointercancel", endDrag);
@@ -469,6 +561,22 @@
 
   function moveDrag(e) {
     if (!drag) return;
+    const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < MOVE_THRESHOLD) return;
+
+    if (!drag.moved) {
+      // Drag beginnt erst jetzt → Ghost erzeugen
+      drag.moved = true;
+      drag.el.classList.add("dragging");
+      const ghost = drag.el.cloneNode(true);
+      ghost.classList.remove("dragging");
+      Object.assign(ghost.style, {
+        position: "fixed", pointerEvents: "none", zIndex: "50", opacity: "0.9"
+      });
+      document.body.appendChild(ghost);
+      drag.ghost = ghost;
+    }
+
     const p = drag.piece;
     drag.ghost.style.left = (e.clientX - p.cols * 14) + "px";
     drag.ghost.style.top = (e.clientY - p.rows * 14 - 40) + "px";
@@ -481,45 +589,73 @@
 
     const valid = canPlace(p, baseR, baseC);
     drag.target = valid ? { baseR, baseC } : null;
-    dragPreview = {
-      color: p.color, valid,
-      cells: p.shape.map(([r, c]) => [baseR + r, baseC + c])
-    };
+    dragPreview = { color: p.color, valid, cells: p.shape.map(([r, c]) => [baseR + r, baseC + c]) };
   }
 
   function endDrag() {
     if (!drag) return;
-    const { piece, el, ghost, target } = drag;
+    const { piece, el, ghost, target, moved } = drag;
     el.classList.remove("dragging");
     el.removeEventListener("pointermove", moveDrag);
     el.removeEventListener("pointerup", endDrag);
     el.removeEventListener("pointercancel", endDrag);
     if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    dragPreview = null;
 
-    if (target && canPlace(piece, target.baseR, target.baseC)) {
+    if (!moved) {
+      // reiner Tap → Teil drehen
+      rotatePiece(piece);
+    } else if (target && canPlace(piece, target.baseR, target.baseC)) {
       placePiece(piece, target.baseR, target.baseC);
       piece.used = true;
       renderTray();
       afterMove();
     }
     drag = null;
-    dragPreview = null;
   }
 
   // ---------- Controls ----------
-  function restart() {
+  function startGame() {
     score = 0; scoreAnim = 0;
     scoreEl.textContent = 0;
     newBoard();
     refillTray();
     history = null;
     undoBtn.disabled = true;
-    clearing = []; particles = []; floaters = [];
+    gameEnded = false;
+    clearing = []; particles = []; floaters = []; hint = null;
     overlay.classList.add("hidden");
   }
 
-  document.getElementById("overlay-restart").addEventListener("click", restart);
+  function dailySeed() {
+    const d = new Date();
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  }
+
+  function startDaily() {
+    dailyActive = true;
+    difficulty = "normal";
+    diffSel.value = "normal";
+    diffSel.disabled = true;
+    dailyBtn.classList.add("active");
+    rngState = dailySeed();
+    startGame();
+  }
+
+  function stopDaily() {
+    dailyActive = false;
+    diffSel.disabled = false;
+    dailyBtn.classList.remove("active");
+    rngState = null;
+    startGame();
+  }
+
+  document.getElementById("overlay-restart").addEventListener("click", () => {
+    if (dailyActive) startDaily(); else startGame();
+  });
   undoBtn.addEventListener("click", undo);
+  hintBtn.addEventListener("click", showHint);
+  dailyBtn.addEventListener("click", () => { if (dailyActive) stopDaily(); else startDaily(); });
   soundBtn.addEventListener("click", () => {
     soundOn = !soundOn;
     localStorage.setItem("bb_sound", soundOn ? "on" : "off");
@@ -529,7 +665,7 @@
   diffSel.addEventListener("change", () => {
     difficulty = diffSel.value;
     localStorage.setItem("bb_diff", difficulty);
-    restart();
+    startGame();
   });
 
   // ---------- Init ----------

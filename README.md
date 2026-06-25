@@ -40,9 +40,17 @@ Die beste Punktzahl wird lokal im Browser (`localStorage`) gespeichert.
 - 🎚️ **Schwierigkeitsgrade** – *Einfach* (mehr kleine Teile), *Normal*
   (gleichverteilt) und *Schwer* (mehr große Teile). Ein Wechsel startet ein
   neues Spiel.
+- 🔄 **Teile drehen** – ein **Tippen/Klicken** auf ein Teil dreht es um 90°,
+  **Ziehen** platziert es. (Hinweistext steht über dem Tray.)
+- 💡 **Hinweis** – markiert kurz einen möglichen Zug auf dem Feld.
+- 📅 **Tageschallenge** – über den 📅-Button. Die Teilfolge wird aus dem
+  aktuellen Datum als Seed erzeugt, ist also für alle an einem Tag identisch
+  und reproduzierbar. Nochmal 📅 drücken beendet den Tagesmodus.
+- 🏆 **Bestenliste** – die fünf besten Punktzahlen werden lokal gespeichert und
+  im Game-Over-Screen angezeigt; der aktuelle Lauf wird hervorgehoben.
 
-Einstellungen (Schwierigkeit, Ton) und Highscore werden im `localStorage`
-gespeichert.
+Einstellungen (Schwierigkeit, Ton), Highscore und Bestenliste werden im
+`localStorage` gespeichert.
 
 ## Steuerung
 
