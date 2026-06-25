@@ -19,6 +19,16 @@
       </div>
     </header>
 
+    <div class="controls">
+      <select id="difficulty" class="ctrl-select" title="Schwierigkeit">
+        <option value="easy">Einfach</option>
+        <option value="normal" selected>Normal</option>
+        <option value="hard">Schwer</option>
+      </select>
+      <button id="undo" class="ctrl-btn" title="Rückgängig" disabled>↩︎ Undo</button>
+      <button id="sound" class="ctrl-btn" title="Ton an/aus">🔊</button>
+    </div>
+
     <div id="combo" class="combo"></div>
 
     <div id="board-wrap">
@@ -26,8 +36,6 @@
     </div>
 
     <div id="tray" class="tray"></div>
-
-    <button id="restart" class="restart hidden">Neues Spiel</button>
 
     <div id="gameover" class="overlay hidden">
       <div class="overlay-card">

@@ -70,6 +70,45 @@ html, body {
   line-height: 1.2;
 }
 
+.controls {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.ctrl-select,
+.ctrl-btn {
+  background: var(--panel);
+  color: var(--text);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.ctrl-select {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: center;
+  text-align-last: center;
+}
+
+.ctrl-btn:active { transform: scale(0.95); }
+
+.ctrl-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ctrl-btn.off {
+  color: var(--muted);
+}
+
 .combo {
   height: 24px;
   font-size: 18px;

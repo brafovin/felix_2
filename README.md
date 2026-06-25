@@ -30,6 +30,20 @@ python3 -m http.server 8000
 
 Die beste Punktzahl wird lokal im Browser (`localStorage`) gespeichert.
 
+## Features
+
+- 🔊 **Sound-Effekte** – per Web Audio API erzeugt (keine Audio-Dateien nötig),
+  mit Ton-an/aus-Schalter.
+- ✨ **Animationen** – Partikel-Explosion und schwebende Punkte-Anzeige beim
+  Auflösen von Linien, animierter hochzählender Punktestand.
+- ↩︎ **Rückgängig (Undo)** – macht den letzten Zug rückgängig (ein Schritt).
+- 🎚️ **Schwierigkeitsgrade** – *Einfach* (mehr kleine Teile), *Normal*
+  (gleichverteilt) und *Schwer* (mehr große Teile). Ein Wechsel startet ein
+  neues Spiel.
+
+Einstellungen (Schwierigkeit, Ton) und Highscore werden im `localStorage`
+gespeichert.
+
 ## Steuerung
 
 - **Maus:** Teil anklicken, auf das Feld ziehen, loslassen.
